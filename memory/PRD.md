@@ -9,6 +9,8 @@
 - **Frontend**: React 19 + Tailwind CSS + Framer Motion + Leaflet
 - **Backend**: FastAPI (Python) + MongoDB
 - **Авторизація**: JWT + Google OAuth (Emergent Auth)
+- **Контейнеризація**: Docker + Docker Compose
+- **Веб-сервер**: Nginx (production)
 
 ## Цільова аудиторія
 - Жителі обох населених пунктів громади
@@ -16,19 +18,9 @@
 - Підприємці та продавці
 - Адміністратори системи
 
-## Ключові вимоги (статичні)
-1. Двозонна архітектура (мульти-тенант)
-2. Система рівнів доступу (superadmin, admin, moderator, user)
-3. Новини та оголошення громади
-4. Маркетплейс для місцевих підприємців
-5. Форум для обговорень
-6. Інтерактивна мапа з об'єктами інфраструктури
-7. Інтеграція з соцмережами (підготовлено)
-8. Погодний віджет (підготовлено)
-
 ---
 
-## Що реалізовано (MVP) - 15.03.2026
+## Що реалізовано - 15.03.2026
 
 ### Backend API
 - [x] Авторизація (JWT + Google OAuth)
@@ -36,10 +28,8 @@
 - [x] CRUD для новин
 - [x] CRUD для оголошень
 - [x] Отримання інформації про ради
-- [x] Отримання депутатів
-- [x] Отримання документів
-- [x] Теми форуму
 - [x] Маркетплейс (продукти)
+- [x] Теми форуму
 - [x] Seed даних при старті
 
 ### Frontend
@@ -47,7 +37,7 @@
 - [x] Навігація (хедер, мобільне меню, футер)
 - [x] Сторінка новин з фільтрами
 - [x] Сторінка оголошень
-- [x] Сторінка ради (окрема для кожної)
+- [x] Сторінки рад (окрема для кожної)
 - [x] Маркетплейс
 - [x] Форум
 - [x] Інтерактивна мапа (Leaflet)
@@ -55,49 +45,85 @@
 - [x] Логін/Реєстрація
 - [x] Google OAuth інтеграція
 - [x] Погодний віджет (мок дані)
-- [x] Соціальна стрічка (мок)
 
-### Дизайн
-- Кольори: #1e3a5f (основний), #e67e22 (акцент), #27ae60 (вторинний)
-- Шрифти: Montserrat (заголовки), Open Sans (текст)
-- Адаптивний дизайн (mobile-first)
+### Docker та Deployment
+- [x] Dockerfile для backend (production + dev)
+- [x] Dockerfile для frontend (multi-stage + dev)
+- [x] docker-compose.yml для production
+- [x] docker-compose.dev.yml для розробки
+- [x] Nginx конфігурація
+- [x] .env.example файли
+- [x] .dockerignore файли
+- [x] Детальна документація (README.md, DEPLOY.md)
 
 ---
 
-## Backlog (P0 - критичні)
-1. [ ] Адмін-панель для управління контентом
-2. [ ] Детальна сторінка новини (/news/:id)
-3. [ ] Створення оголошень через форму
-4. [ ] Профіль користувача
+## Структура проекту
 
-## P1 - Важливі
-5. [ ] Інтеграція OpenWeatherMap API (потрібен ключ)
-6. [ ] Інтеграція Facebook/Instagram API (потрібні ключі)
-7. [ ] Система коментарів
-8. [ ] Push-сповіщення
-
-## P2 - Бажані
-9. [ ] Темна тема
-10. [ ] PWA підтримка
-11. [ ] Мультимовність (UA/EN)
-12. [ ] Пошук по сайту
-13. [ ] Завантаження файлів
-14. [ ] Система рейтингів для маркетплейсу
+```
+moe-mistechko/
+├── backend/
+│   ├── Dockerfile
+│   ├── Dockerfile.dev
+│   ├── .env.example
+│   ├── .dockerignore
+│   ├── requirements.txt
+│   └── server.py
+├── frontend/
+│   ├── src/
+│   ├── public/
+│   ├── Dockerfile
+│   ├── Dockerfile.dev
+│   ├── .env.example
+│   ├── .dockerignore
+│   ├── nginx.conf
+│   └── package.json
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── README.md
+├── DEPLOY.md
+├── LICENSE
+└── .gitignore
+```
 
 ---
 
 ## Credentials (тестові)
 - **Admin**: admin@moemistechko.ua / admin123
 
-## API Endpoints
-- `GET /api/health` - статус
-- `GET /api/news` - новини
-- `GET /api/announcements` - оголошення
-- `GET /api/radas` - ради
-- `GET /api/deputies` - депутати
-- `GET /api/forum/topics` - теми форуму
-- `GET /api/products` - маркетплейс
-- `POST /api/auth/login` - логін
-- `POST /api/auth/register` - реєстрація
-- `POST /api/auth/google/session` - Google OAuth
-- `GET /api/auth/me` - поточний користувач
+## Docker команди
+
+```bash
+# Production
+docker-compose up -d --build
+
+# Development
+docker-compose -f docker-compose.dev.yml up -d
+
+# Логи
+docker-compose logs -f
+
+# Зупинка
+docker-compose down
+```
+
+---
+
+## Backlog
+
+### P0 - Критичні
+1. [ ] Адмін-панель для управління контентом
+2. [ ] Детальна сторінка новини (/news/:id)
+3. [ ] Створення оголошень через форму
+
+### P1 - Важливі
+4. [ ] Інтеграція OpenWeatherMap API
+5. [ ] Інтеграція Facebook/Instagram API
+6. [ ] Система коментарів
+7. [ ] Профіль користувача
+
+### P2 - Бажані
+8. [ ] Темна тема
+9. [ ] PWA підтримка
+10. [ ] Мультимовність (UA/EN)
+11. [ ] Push-сповіщення
