@@ -117,15 +117,24 @@ class NewsCreate(BaseModel):
     category: str
     rada: str = "all"
 
+ANNOUNCEMENT_CATEGORIES = {
+    "community",
+    "events",
+    "work",
+    "help",
+    "lostfound",
+    "other",
+}
+
+
 class Announcement(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     description: str
-    category: str  # work, realty, auto, services, lostfound, other
+    category: str  # community, events, work, help, lostfound, other
     rada: str
     is_urgent: bool = False
-    price: Optional[float] = None
     contact_info: str
     image: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -138,7 +147,6 @@ class AnnouncementCreate(BaseModel):
     category: str
     rada: str
     is_urgent: bool = False
-    price: Optional[float] = None
     contact_info: str
     image: Optional[str] = None
     expires_days: int = 30
@@ -567,10 +575,15 @@ async def get_announcements(
     limit: int = Query(20, le=100),
     skip: int = Query(0)
 ):
-    query = {"expires_at": {"$gte": datetime.now(timezone.utc).isoformat()}}
+    query = {
+        "expires_at": {"$gte": datetime.now(timezone.utc).isoformat()},
+        "category": {"$in": list(ANNOUNCEMENT_CATEGORIES)},
+    }
     if rada:
         query["rada"] = rada
     if category:
+        if category not in ANNOUNCEMENT_CATEGORIES:
+            return []
         query["category"] = category
     
     announcements = await db.announcements.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
@@ -584,13 +597,15 @@ async def get_announcements(
 
 @api_router.post("/announcements", response_model=Announcement)
 async def create_announcement(data: AnnouncementCreate, current_user: User = Depends(get_current_user)):
+    if data.category not in ANNOUNCEMENT_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Оберіть категорію інформаційного оголошення")
+
     announcement = Announcement(
         title=data.title,
         description=data.description,
         category=data.category,
         rada=data.rada,
         is_urgent=data.is_urgent,
-        price=data.price,
         contact_info=data.contact_info,
         image=validate_storage_reference(data.image),
         expires_at=datetime.now(timezone.utc) + timedelta(days=data.expires_days),
@@ -1030,10 +1045,33 @@ app.add_middleware(
 # Startup event - seed data
 @app.on_event("startup")
 async def startup_event():
+    await migrate_announcements()
     # Check if data exists
     news_count = await db.news.count_documents({})
     if news_count == 0:
         await seed_data()
+
+
+async def migrate_announcements():
+    """Keep the announcements board informational, separate from the marketplace."""
+    await db.announcements.update_many({}, {"$unset": {"price": ""}})
+
+    # Replace the original demo sale listing with a community notice for existing databases.
+    await db.announcements.update_one(
+        {"user_id": "system", "title": "Продам будинок у с. Зелене"},
+        {
+            "$set": {
+                "title": "Громадські слухання у с. Зелене",
+                "description": "Запрошуємо мешканців громади долучитися до громадських слухань щодо розвитку села.",
+                "category": "community",
+                "is_urgent": False,
+                "contact_info": "+38 (0312) 45-67-89",
+                "image": None,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            },
+            "$unset": {"price": ""},
+        },
+    )
 
 async def seed_data():
     """Seed initial data for the application"""
@@ -1162,14 +1200,13 @@ async def seed_data():
     announcements = [
         {
             "id": str(uuid.uuid4()),
-            "title": "Продам будинок у с. Зелене",
-            "description": "Продається затишний будинок 120 м² на ділянці 15 соток.",
-            "category": "realty",
+            "title": "Громадські слухання у с. Зелене",
+            "description": "Запрошуємо мешканців громади долучитися до громадських слухань щодо розвитку села.",
+            "category": "community",
             "rada": "rada1",
             "is_urgent": False,
-            "price": 85000,
-            "contact_info": "+38 (067) 123-45-67",
-            "image": "/api/storage/site/photo-1568605114967-8130f3a36994.jpg",
+            "contact_info": "+38 (0312) 45-67-89",
+            "image": None,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
             "user_id": "system"
@@ -1181,7 +1218,6 @@ async def seed_data():
             "category": "work",
             "rada": "rada2",
             "is_urgent": True,
-            "price": None,
             "contact_info": "+38 (050) 987-65-43",
             "image": None,
             "created_at": datetime.now(timezone.utc).isoformat(),

@@ -168,10 +168,10 @@ export const socialPostsData = [
 ];
 
 export const announcementCategories = {
+  community: { label: 'Громадські повідомлення', color: 'bg-blue-100 text-blue-800' },
+  events: { label: 'Події та заходи', color: 'bg-amber-100 text-amber-800' },
   work: { label: 'Робота', color: 'bg-blue-100 text-blue-800' },
-  realty: { label: 'Нерухомість', color: 'bg-green-100 text-green-800' },
-  auto: { label: 'Авто', color: 'bg-orange-100 text-orange-800' },
-  services: { label: 'Послуги', color: 'bg-purple-100 text-purple-800' },
-  lostfound: { label: 'Знайшов/Загубив', color: 'bg-red-100 text-red-800' },
+  help: { label: 'Потрібна допомога', color: 'bg-purple-100 text-purple-800' },
+  lostfound: { label: 'Знайдено/Загублено', color: 'bg-red-100 text-red-800' },
   other: { label: 'Інше', color: 'bg-gray-100 text-gray-800' }
 };

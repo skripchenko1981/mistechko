@@ -52,12 +52,6 @@ export function AnnouncementCard({ announcement, index = 0 }) {
             {announcement.description}
           </p>
           
-          {announcement.price && (
-            <p className="text-lg font-bold text-[#27ae60] mb-2">
-              {announcement.price.toLocaleString('uk-UA')} грн
-            </p>
-          )}
-          
           <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />

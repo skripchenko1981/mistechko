@@ -29,10 +29,9 @@
  * @property {string} id
  * @property {string} title
  * @property {string} description
- * @property {'work'|'realty'|'auto'|'services'|'lostfound'|'other'} category
+ * @property {'community'|'events'|'work'|'help'|'lostfound'|'other'} category
  * @property {'rada1'|'rada2'} rada
  * @property {boolean} is_urgent
- * @property {number} [price]
  * @property {string} contact_info
  * @property {string} [image]
  * @property {string} created_at

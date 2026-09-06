@@ -13,11 +13,11 @@ import { useAuthStore } from '../stores';
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 const categories = [
+  ['community', 'Громадські повідомлення'],
+  ['events', 'Події та заходи'],
   ['work', 'Робота'],
-  ['realty', 'Нерухомість'],
-  ['auto', 'Авто'],
-  ['services', 'Послуги'],
-  ['lostfound', 'Знайшов/Загубив'],
+  ['help', 'Потрібна допомога'],
+  ['lostfound', 'Знайдено/Загублено'],
   ['other', 'Інше'],
 ];
 
@@ -25,7 +25,7 @@ export function AnnouncementCreatePage() {
   const navigate = useNavigate();
   const { token } = useAuthStore();
   const [form, setForm] = useState({
-    title: '', description: '', category: 'other', rada: 'all', price: '', contact_info: '', expires_days: '30', is_urgent: false,
+    title: '', description: '', category: 'community', rada: 'all', contact_info: '', expires_days: '30', is_urgent: false,
   });
   const [imageFile, setImageFile] = useState(null);
   const [error, setError] = useState('');
@@ -48,7 +48,6 @@ export function AnnouncementCreatePage() {
           title: form.title.trim(),
           description: form.description.trim(),
           contact_info: form.contact_info.trim(),
-          price: form.price === '' ? null : Number(form.price),
           expires_days: Number(form.expires_days),
           image: uploadedImage?.url || null,
         }),
@@ -69,13 +68,13 @@ export function AnnouncementCreatePage() {
         <Link to="/announcements" className="mb-6 inline-flex items-center text-[#1e3a5f] hover:text-[#e67e22]">
           <ArrowLeft className="mr-2 h-4 w-4" /> До оголошень
         </Link>
-        <SectionTitle title="Нове оголошення" subtitle="Розкажіть громаді про важливу пропозицію або подію" />
+        <SectionTitle title="Нове оголошення" subtitle="Повідомте громаду про важливу подію або інформацію" />
         <Card className="mt-8 border-[#d9e2ec] shadow-sm">
           <CardContent className="p-6">
             <form onSubmit={submit} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="announcement-title">Заголовок *</Label>
-                <Input id="announcement-title" value={form.title} maxLength={120} required placeholder="Наприклад: Продам будинок" onChange={(event) => update('title', event.target.value)} />
+                <Input id="announcement-title" value={form.title} maxLength={120} required placeholder="Наприклад: Громадські слухання у селі" onChange={(event) => update('title', event.target.value)} />
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
@@ -91,10 +90,6 @@ export function AnnouncementCreatePage() {
                     <option value="rada1">Рада №1</option>
                     <option value="rada2">Рада №2</option>
                   </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="announcement-price">Ціна, грн</Label>
-                  <Input id="announcement-price" type="number" min="0" step="0.01" value={form.price} placeholder="Не вказано" onChange={(event) => update('price', event.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="announcement-expires">Діє, днів</Label>
