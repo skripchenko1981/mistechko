@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import { MapPin, Plus, X } from 'lucide-react';
@@ -85,13 +85,13 @@ function MapClickHandler({ enabled, onPick }) {
   return null;
 }
 
-function ObjectForm({ object, setObject, onSubmit, onCancel, isSaving, error }) {
+function ObjectForm({ object, setObject, onSubmit, onCancel, isSaving, error, hasLocation }) {
   return (
     <div className="mb-4 rounded-xl border border-[#b9dcc5] bg-[#f6fcf8] p-4 shadow-sm">
       <div className="mb-3 flex items-start justify-between gap-4">
         <div>
           <h3 className="font-semibold text-[#1e3a5f]">Новий об’єкт на мапі</h3>
-          <p className="text-sm text-gray-600">Точку вже вибрано. Заповніть інформацію про магазин або організацію.</p>
+      <p className="text-sm text-gray-600">{hasLocation ? 'Точку вже вибрано. Заповніть інформацію про магазин або організацію.' : 'Клікніть на мапі в місці розташування об’єкта.'}</p>
         </div>
         <button type="button" onClick={onCancel} className="text-gray-500 hover:text-gray-800" aria-label="Закрити">
           <X className="h-5 w-5" />
@@ -132,10 +132,12 @@ function ObjectForm({ object, setObject, onSubmit, onCancel, isSaving, error }) 
           <Label htmlFor="map-object-description">Опис</Label>
           <Textarea id="map-object-description" value={object.description} maxLength={1000} placeholder="Графік роботи або додаткова інформація" onChange={(event) => setObject({ ...object, description: event.target.value })} />
         </div>
-        <p className="text-xs text-gray-500 md:col-span-2">Координати: {object.latitude.toFixed(6)}, {object.longitude.toFixed(6)}</p>
+        <p className={`text-xs md:col-span-2 ${hasLocation ? 'text-gray-500' : 'font-medium text-[#e67e22]'}`}>
+          {hasLocation ? `Координати: ${object.latitude.toFixed(6)}, ${object.longitude.toFixed(6)}` : 'Місце на мапі ще не вибрано'}
+        </p>
         {error && <p className="text-sm text-red-600 md:col-span-2">{error}</p>}
         <div className="flex gap-2 md:col-span-2">
-          <Button type="submit" className="bg-[#27ae60] hover:bg-[#219653]" disabled={isSaving}>{isSaving ? 'Збереження...' : 'Додати об’єкт'}</Button>
+          <Button type="submit" className="bg-[#27ae60] hover:bg-[#219653]" disabled={isSaving || !hasLocation}>{isSaving ? 'Збереження...' : 'Додати об’єкт'}</Button>
           <Button type="button" variant="outline" onClick={onCancel}>Скасувати</Button>
         </div>
       </form>
@@ -149,6 +151,7 @@ export function MapComponent({ height = '400px', rada = null }) {
   const [activeType, setActiveType] = useState(null);
   const [serverObjects, setServerObjects] = useState([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [pickedCoordinates, setPickedCoordinates] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const { isAuthenticated, token, user } = useAuthStore();
@@ -181,21 +184,28 @@ export function MapComponent({ height = '400px', rada = null }) {
 
   const startAdding = () => {
     setFormError('');
+    setPickedCoordinates(null);
     setIsAdding(true);
   };
 
   const handleMapPick = ([latitude, longitude]) => {
+    setPickedCoordinates([latitude, longitude]);
     setNewObject((current) => ({ ...current, latitude, longitude, community: activeCommunity === 'all' ? current.community : activeCommunity }));
     setFormError('');
   };
 
   const cancelAdding = () => {
     setIsAdding(false);
+    setPickedCoordinates(null);
     setFormError('');
   };
 
   const saveObject = async (event) => {
     event.preventDefault();
+    if (!pickedCoordinates) {
+      setFormError('Спочатку клікніть на мапі, щоб вибрати місце об’єкта.');
+      return;
+    }
     setIsSaving(true);
     setFormError('');
     try {
@@ -210,6 +220,7 @@ export function MapComponent({ height = '400px', rada = null }) {
       if (activeCommunity === 'all' || data.community === activeCommunity) setServerObjects((current) => [data, ...current]);
       setNewObject({ ...newObject, name: '', address: '', phone: '', description: '' });
       setIsAdding(false);
+      setPickedCoordinates(null);
     } catch (error) {
       setFormError(error.message);
     } finally {
@@ -255,12 +266,17 @@ export function MapComponent({ height = '400px', rada = null }) {
         <p className="mb-4 rounded-lg bg-white p-3 text-sm text-gray-600 shadow-sm"><Link to="/login" className="font-medium text-[#e67e22] hover:underline">Увійдіть</Link>, щоб додати магазин або організацію на мапу.</p>
       )}
 
-      {isAdding && <ObjectForm object={newObject} setObject={setNewObject} onSubmit={saveObject} onCancel={cancelAdding} isSaving={isSaving} error={formError} />}
+      {isAdding && <ObjectForm object={newObject} setObject={setNewObject} onSubmit={saveObject} onCancel={cancelAdding} isSaving={isSaving} error={formError} hasLocation={Boolean(pickedCoordinates)} />}
 
       <div style={{ height }} className="overflow-hidden rounded-xl shadow-lg">
         <MapContainer key={activeCommunity} center={center} zoom={zoom} style={{ height: '100%', width: '100%' }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
           <MapClickHandler enabled={isAdding} onPick={handleMapPick} />
+          {isAdding && pickedCoordinates && (
+            <CircleMarker center={pickedCoordinates} radius={10} pathOptions={{ color: '#e67e22', fillColor: '#e67e22', fillOpacity: 0.8, weight: 3 }}>
+              <Popup>Обрана точка об’єкта</Popup>
+            </CircleMarker>
+          )}
           {activeCommunity === 'all' && Object.entries(communities).map(([key, community], index) => (
             <Marker key={key} position={community.center} icon={createCommunityIcon(index === 0 ? '#1e3a5f' : '#27ae60')}>
               <Popup><strong>{community.name}</strong><br />Адміністративний центр громади</Popup>
