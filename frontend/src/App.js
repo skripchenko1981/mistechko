@@ -5,6 +5,7 @@ import {
   HomePage, 
   NewsPage, 
   AnnouncementsPage,
+  AnnouncementCreatePage,
   RadaPage,
   MapPage,
   ContactsPage,
@@ -65,6 +66,7 @@ function AppRouter() {
         <Route path="/" element={<HomePage />} />
         <Route path="/news" element={<NewsPage />} />
         <Route path="/announcements" element={<AnnouncementsPage />} />
+        <Route path="/announcements/new" element={<ProtectedRoute><AnnouncementCreatePage /></ProtectedRoute>} />
         <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/marketplace/:productId" element={<MarketplaceProductPage />} />
         <Route path="/forum" element={<ForumPage />} />

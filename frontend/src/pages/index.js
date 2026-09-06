@@ -1,6 +1,7 @@
 export { HomePage } from './HomePage';
 export { NewsPage } from './NewsPage';
 export { AnnouncementsPage } from './AnnouncementsPage';
+export { AnnouncementCreatePage } from './AnnouncementCreatePage';
 export { RadaPage } from './RadaPage';
 export { MapPage } from './MapPage';
 export { ContactsPage } from './ContactsPage';

@@ -15,7 +15,7 @@ const radaFilters = [
 ];
 
 export function AnnouncementsPage() {
-  const { announcements, isLoading, fetchAnnouncements } = useAnnouncementsStore();
+  const { announcements, isLoading, error, fetchAnnouncements } = useAnnouncementsStore();
   const { isAuthenticated } = useAuthStore();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedRada, setSelectedRada] = useState('all');
@@ -133,7 +133,8 @@ export function AnnouncementsPage() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">Оголошень не знайдено</p>
+            <p className="text-gray-500 text-lg">{error ? 'Не вдалося завантажити оголошення' : 'Оголошень не знайдено'}</p>
+            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
             {isAuthenticated && (
               <Link to="/announcements/new">
                 <Button className="mt-4 bg-[#e67e22] hover:bg-[#d35400]">
