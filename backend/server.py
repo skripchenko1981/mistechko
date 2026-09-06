@@ -785,6 +785,12 @@ async def get_products(
     
     return products
 
+@api_router.get("/products/locations")
+async def get_product_locations():
+    locations = await db.products.distinct("location", {"status": {"$ne": "deleted"}})
+    defaults = ["с. Зелене", "мкр. Сонячний", "Громада"]
+    return sorted({location.strip() for location in [*defaults, *locations] if isinstance(location, str) and location.strip()})
+
 @api_router.get("/products/{product_id}")
 async def get_product(product_id: str):
     product = await db.products.find_one({"id": product_id}, {"_id": 0})

@@ -19,6 +19,7 @@ import {
 import { SectionTitle } from '../components/common';
 import { useAuthStore } from '../stores';
 import { uploadFile } from '../lib/storage';
+import { SettlementPicker } from '../components/common/SettlementPicker';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -281,9 +282,11 @@ export function MarketplacePage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="product-location" className="text-[#1e3a5f]">Місто або населений пункт</Label>
-              <Input id="product-location" value={newProduct.location} maxLength={80}
-                placeholder="Наприклад: Зелене"
-                onChange={(event) => setNewProduct({ ...newProduct, location: event.target.value })} />
+              <SettlementPicker
+                id="product-location"
+                value={newProduct.location}
+                onChange={(location) => setNewProduct({ ...newProduct, location })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="product-phone" className="text-[#1e3a5f]">Телефон продавця</Label>

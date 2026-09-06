@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SectionTitle } from '../components/common';
 import { useAuthStore } from '../stores';
 import { uploadFile } from '../lib/storage';
+import { SettlementPicker } from '../components/common/SettlementPicker';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -253,7 +254,7 @@ export function MarketplaceProductPage() {
                 <div className="space-y-2"><Label className="text-[#1e3a5f]">Ціна, грн</Label><Input className="border-[#b9dcc5] bg-white focus-visible:ring-[#27ae60]" type="number" min="0" value={editProduct.price} onChange={(e) => setEditProduct({ ...editProduct, price: e.target.value })} required /></div>
                 <div className="space-y-2"><Label className="text-[#1e3a5f]">Телефон</Label><Input className="border-[#b9dcc5] bg-white focus-visible:ring-[#27ae60]" type="tel" value={editProduct.contact_phone} onChange={(e) => setEditProduct({ ...editProduct, contact_phone: e.target.value })} required /></div>
               </div>
-              <div className="space-y-2"><Label className="text-[#1e3a5f]">Місто або населений пункт</Label><Input className="border-[#b9dcc5] bg-white focus-visible:ring-[#27ae60]" value={editProduct.location} onChange={(e) => setEditProduct({ ...editProduct, location: e.target.value })} /></div>
+              <div className="space-y-2"><Label className="text-[#1e3a5f]">Місто або населений пункт</Label><SettlementPicker value={editProduct.location} onChange={(location) => setEditProduct({ ...editProduct, location })} className="border-[#b9dcc5] bg-white focus-visible:ring-[#27ae60]" /></div>
               <div className="space-y-2"><Label className="text-[#1e3a5f]">Фото товару</Label><Input className="border-[#b9dcc5] bg-white file:bg-transparent" type="file" accept="image/*" onChange={(e) => setEditImageFile(e.target.files?.[0] || null)} />{editImageFile && <p className="text-xs text-gray-500">Обрано: {editImageFile.name}</p>}</div>
               <div className="space-y-2"><Label className="text-[#1e3a5f]">Опис</Label><Textarea className="min-h-[120px] border-[#b9dcc5] bg-white focus-visible:ring-[#27ae60]" value={editProduct.description} onChange={(e) => setEditProduct({ ...editProduct, description: e.target.value })} required /></div>
               {editError && <p className="text-sm text-red-600" role="alert">{editError}</p>}
