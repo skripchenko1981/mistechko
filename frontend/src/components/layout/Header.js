@@ -14,7 +14,7 @@ const navLinks = [
   { path: '/', label: 'Головна', icon: Home },
   { path: '/news', label: 'Новини', icon: Newspaper },
   { path: '/announcements', label: 'Оголошення', icon: Megaphone },
-  { path: '/marketplace', label: 'Маркетплейс', icon: ShoppingBag },
+  { path: '/marketplace', label: 'Купи-продай', icon: ShoppingBag },
   { path: '/forum', label: 'Форум', icon: MessageSquare },
   { path: '/map', label: 'Мапа', icon: Map },
   { path: '/contacts', label: 'Контакти', icon: Phone },

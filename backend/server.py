@@ -1,15 +1,20 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Query, File, UploadFile
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
+import boto3
+import mimetypes
 import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
+import re
 from datetime import datetime, timezone, timedelta
-import httpx
+from urllib.parse import quote
 import jwt
 from passlib.hash import bcrypt
 
@@ -26,6 +31,27 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'your-super-secret-jwt-key-change-in-p
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_DAYS = 7
 
+# Cloudflare R2 (S3-compatible object storage)
+R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL', '').rstrip('/')
+R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME', 'mistechko')
+R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
+R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
+R2_REGION = os.environ.get('R2_REGION', 'auto')
+MAX_UPLOAD_SIZE = 25 * 1024 * 1024
+
+if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]):
+    r2_client = boto3.client(
+        's3',
+        endpoint_url=R2_ENDPOINT_URL,
+        aws_access_key_id=R2_ACCESS_KEY_ID,
+        aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+        region_name=R2_REGION,
+    )
+else:
+    r2_client = None
+    logger = logging.getLogger(__name__)
+    logger.warning('Cloudflare R2 is not configured; file uploads are disabled.')
+
 # Create the main app
 app = FastAPI(title="Моє Містечко API")
 
@@ -35,6 +61,18 @@ api_router = APIRouter(prefix="/api")
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def require_r2():
+    if r2_client is None:
+        raise HTTPException(status_code=503, detail='Сховище файлів не налаштоване.')
+
+def storage_url(object_key: str) -> str:
+    return f'/api/storage/{quote(object_key, safe="/")}'
+
+def validate_storage_reference(value: Optional[str]) -> Optional[str]:
+    if value and (value.startswith('http://') or value.startswith('https://')):
+        raise HTTPException(status_code=400, detail='Завантажте файл через форму, а не вставляйте зовнішнє посилання.')
+    return value
 
 # ==================== Models ====================
 
@@ -165,6 +203,18 @@ class ForumTopicCreate(BaseModel):
     category: str
     content: str
 
+class ForumReply(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    topic_id: str
+    content: str
+    author: str
+    user_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ForumReplyCreate(BaseModel):
+    content: str
+
 class Product(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -177,6 +227,10 @@ class Product(BaseModel):
     reviews: int = 0
     category: str
     rada: str
+    location: str = "Громада"
+    condition: str = "Вживане"
+    status: str = "active"
+    contact_phone: Optional[str] = None
     user_id: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -187,6 +241,23 @@ class ProductCreate(BaseModel):
     image: Optional[str] = None
     category: str
     rada: str
+    location: str = "Громада"
+    condition: str = "Вживане"
+    contact_phone: str
+
+class ProductMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    product_id: str
+    sender_id: str
+    sender_name: str
+    receiver_id: str
+    content: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ProductMessageCreate(BaseModel):
+    content: str
+    receiver_id: Optional[str] = None
 
 # ==================== Auth Helpers ====================
 
@@ -314,82 +385,6 @@ async def login(data: UserLogin, response: Response):
         }
     }
 
-# REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-@api_router.post("/auth/google/session")
-async def google_auth_session(request: Request, response: Response):
-    body = await request.json()
-    session_id = body.get("session_id")
-    
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id required")
-    
-    # Exchange session_id with Emergent Auth
-    async with httpx.AsyncClient() as client_http:
-        resp = await client_http.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": session_id}
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="Invalid session")
-        
-        auth_data = resp.json()
-    
-    email = auth_data.get("email")
-    name = auth_data.get("name")
-    picture = auth_data.get("picture")
-    session_token = auth_data.get("session_token")
-    
-    # Find or create user
-    user = await db.users.find_one({"email": email}, {"_id": 0})
-    if not user:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        user_doc = {
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "role": "user",
-            "rada": None,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.users.insert_one(user_doc)
-        user = user_doc
-    else:
-        # Update user info
-        await db.users.update_one(
-            {"email": email},
-            {"$set": {"name": name, "picture": picture}}
-        )
-        user["name"] = name
-        user["picture"] = picture
-    
-    # Store session
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.insert_one({
-        "user_id": user["user_id"],
-        "session_token": session_token,
-        "expires_at": expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
-    
-    response.set_cookie(
-        key="session_token",
-        value=session_token,
-        httponly=True,
-        secure=True,
-        samesite="none",
-        path="/",
-        max_age=7 * 24 * 60 * 60
-    )
-    
-    return {
-        "user_id": user["user_id"],
-        "email": user["email"],
-        "name": user["name"],
-        "picture": user.get("picture"),
-        "role": user.get("role", "user")
-    }
-
 @api_router.get("/auth/me")
 async def get_me(current_user: User = Depends(get_current_user)):
     return {
@@ -409,6 +404,73 @@ async def logout(request: Request, response: Response):
     
     response.delete_cookie(key="session_token", path="/")
     return {"message": "Logged out successfully"}
+
+# ==================== File Storage Endpoints ====================
+
+@api_router.post("/uploads")
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    require_r2()
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Оберіть файл для завантаження")
+
+    content_type = file.content_type or mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+    blocked_types = {"application/x-msdownload", "application/x-sh", "text/x-shellscript"}
+    if content_type in blocked_types:
+        raise HTTPException(status_code=400, detail="Цей тип файлу не підтримується")
+
+    content = await file.read(MAX_UPLOAD_SIZE + 1)
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="Файл не може бути більшим за 25 МБ")
+
+    suffix = Path(file.filename).suffix.lower()
+    if not re.fullmatch(r"\.[a-z0-9]{1,8}", suffix):
+        suffix = mimetypes.guess_extension(content_type) or ""
+    object_key = f"uploads/{current_user.user_id}/{uuid.uuid4().hex}{suffix}"
+
+    await asyncio.to_thread(
+        r2_client.put_object,
+        Bucket=R2_BUCKET_NAME,
+        Key=object_key,
+        Body=content,
+        ContentType=content_type,
+        CacheControl="public, max-age=31536000, immutable",
+    )
+    return {
+        "key": object_key,
+        "url": storage_url(object_key),
+        "filename": file.filename,
+        "content_type": content_type,
+        "size": len(content),
+    }
+
+@api_router.get("/storage/{object_key:path}")
+async def download_file(object_key: str):
+    require_r2()
+    if not object_key or ".." in object_key or object_key.startswith("/"):
+        raise HTTPException(status_code=400, detail="Некоректний шлях до файлу")
+    try:
+        stored = await asyncio.to_thread(
+            r2_client.get_object,
+            Bucket=R2_BUCKET_NAME,
+            Key=object_key,
+        )
+        content = await asyncio.to_thread(stored["Body"].read)
+        stored["Body"].close()
+    except Exception as error:
+        logger.warning("Storage object is unavailable: %s", error)
+        raise HTTPException(status_code=404, detail="Файл не знайдено")
+
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    if stored.get("ETag"):
+        headers["ETag"] = stored["ETag"]
+    return Response(
+        content=content,
+        media_type=stored.get("ContentType", "application/octet-stream"),
+        headers=headers,
+    )
 
 # ==================== News Endpoints ====================
 
@@ -459,7 +521,7 @@ async def create_news(data: NewsCreate, current_user: User = Depends(get_current
         title=data.title,
         content=data.content,
         excerpt=data.excerpt,
-        image=data.image,
+        image=validate_storage_reference(data.image),
         category=data.category,
         rada=data.rada,
         author=current_user.name
@@ -505,7 +567,7 @@ async def create_announcement(data: AnnouncementCreate, current_user: User = Dep
         is_urgent=data.is_urgent,
         price=data.price,
         contact_info=data.contact_info,
-        image=data.image,
+        image=validate_storage_reference(data.image),
         expires_at=datetime.now(timezone.utc) + timedelta(days=data.expires_days),
         user_id=current_user.user_id
     )
@@ -597,6 +659,68 @@ async def get_forum_topics(
     
     return topics
 
+@api_router.get("/forum/topics/{topic_id}")
+async def get_forum_topic(topic_id: str):
+    topic = await db.forum_topics.find_one_and_update(
+        {"id": topic_id},
+        {"$inc": {"views": 1}},
+        {"_id": 0},
+        return_document=True
+    )
+    if not topic:
+        raise HTTPException(status_code=404, detail="Тему не знайдено")
+
+    for field in ["created_at", "last_reply"]:
+        if isinstance(topic.get(field), str):
+            topic[field] = datetime.fromisoformat(topic[field])
+
+    return topic
+
+@api_router.get("/forum/topics/{topic_id}/replies")
+async def get_forum_replies(topic_id: str):
+    topic_exists = await db.forum_topics.find_one({"id": topic_id}, {"_id": 1})
+    if not topic_exists:
+        raise HTTPException(status_code=404, detail="Тему не знайдено")
+
+    replies = await db.forum_replies.find(
+        {"topic_id": topic_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(100)
+    for reply in replies:
+        if isinstance(reply.get("created_at"), str):
+            reply["created_at"] = datetime.fromisoformat(reply["created_at"])
+    return replies
+
+@api_router.post("/forum/topics/{topic_id}/replies")
+async def create_forum_reply(
+    topic_id: str,
+    data: ForumReplyCreate,
+    current_user: User = Depends(get_current_user)
+):
+    content = data.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Текст відповіді не може бути порожнім")
+    if len(content) > 4000:
+        raise HTTPException(status_code=400, detail="Відповідь не може містити понад 4000 символів")
+
+    topic = await db.forum_topics.find_one({"id": topic_id}, {"_id": 0})
+    if not topic:
+        raise HTTPException(status_code=404, detail="Тему не знайдено")
+
+    reply = ForumReply(
+        topic_id=topic_id,
+        content=content,
+        author=current_user.name,
+        user_id=current_user.user_id
+    )
+    doc = reply.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.forum_replies.insert_one(doc)
+    await db.forum_topics.update_one(
+        {"id": topic_id},
+        {"$inc": {"replies": 1}, "$set": {"last_reply": doc["created_at"]}}
+    )
+    return reply
+
 @api_router.post("/forum/topics")
 async def create_forum_topic(data: ForumTopicCreate, current_user: User = Depends(get_current_user)):
     topic = ForumTopic(
@@ -621,16 +745,39 @@ async def create_forum_topic(data: ForumTopicCreate, current_user: User = Depend
 async def get_products(
     rada: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    sort: str = Query("newest"),
     limit: int = Query(20, le=100),
     skip: int = Query(0)
 ):
-    query = {}
+    query = {"status": {"$ne": "deleted"}}
     if rada:
         query["rada"] = rada
     if category:
         query["category"] = category
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search.strip(), "$options": "i"}},
+            {"description": {"$regex": search.strip(), "$options": "i"}},
+            {"location": {"$regex": search.strip(), "$options": "i"}},
+        ]
+    if min_price is not None or max_price is not None:
+        query["price"] = {}
+        if min_price is not None:
+            query["price"]["$gte"] = min_price
+        if max_price is not None:
+            query["price"]["$lte"] = max_price
+
+    sort_field = "created_at"
+    sort_direction = -1
+    if sort == "price_asc":
+        sort_field, sort_direction = "price", 1
+    elif sort == "price_desc":
+        sort_field, sort_direction = "price", -1
     
-    products = await db.products.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    products = await db.products.find(query, {"_id": 0}).sort(sort_field, sort_direction).skip(skip).limit(limit).to_list(limit)
     
     for product in products:
         if isinstance(product.get("created_at"), str):
@@ -638,16 +785,41 @@ async def get_products(
     
     return products
 
+@api_router.get("/products/{product_id}")
+async def get_product(product_id: str):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+
+    if isinstance(product.get("created_at"), str):
+        product["created_at"] = datetime.fromisoformat(product["created_at"])
+
+    seller = await db.users.find_one({"user_id": product.get("user_id")}, {"_id": 0, "email": 1})
+    if seller:
+        product["seller_email"] = seller.get("email")
+    return product
+
 @api_router.post("/products")
 async def create_product(data: ProductCreate, current_user: User = Depends(get_current_user)):
+    if not data.name.strip() or not data.description.strip():
+        raise HTTPException(status_code=400, detail="Заповніть назву та опис оголошення")
+    if data.price < 0:
+        raise HTTPException(status_code=400, detail="Ціна не може бути від’ємною")
+    phone = data.contact_phone.strip()
+    if len(phone) < 7:
+        raise HTTPException(status_code=400, detail="Вкажіть коректний номер телефону")
+
     product = Product(
-        name=data.name,
-        description=data.description,
+        name=data.name.strip(),
+        description=data.description.strip(),
         price=data.price,
-        image=data.image,
+        image=validate_storage_reference(data.image),
         seller=current_user.name,
         category=data.category,
         rada=data.rada,
+        location=data.location.strip() or "Громада",
+        condition=data.condition,
+        contact_phone=phone,
         user_id=current_user.user_id
     )
     
@@ -656,6 +828,100 @@ async def create_product(data: ProductCreate, current_user: User = Depends(get_c
     await db.products.insert_one(doc)
     
     return product
+
+@api_router.put("/products/{product_id}")
+async def update_product(product_id: str, data: ProductCreate, current_user: User = Depends(get_current_user)):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    if product.get("user_id") != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Ви можете редагувати лише власні оголошення")
+    if not data.name.strip() or not data.description.strip():
+        raise HTTPException(status_code=400, detail="Заповніть назву та опис оголошення")
+    if data.price < 0:
+        raise HTTPException(status_code=400, detail="Ціна не може бути від’ємною")
+    phone = data.contact_phone.strip()
+    if len(phone) < 7:
+        raise HTTPException(status_code=400, detail="Вкажіть коректний номер телефону")
+
+    updates = {
+        "name": data.name.strip(), "description": data.description.strip(), "price": data.price,
+        "image": validate_storage_reference(data.image), "category": data.category, "rada": data.rada,
+        "location": data.location.strip() or "Громада", "condition": data.condition,
+        "contact_phone": phone,
+    }
+    await db.products.update_one({"id": product_id}, {"$set": updates})
+    updated = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if isinstance(updated.get("created_at"), str):
+        updated["created_at"] = datetime.fromisoformat(updated["created_at"])
+    return updated
+
+@api_router.delete("/products/{product_id}")
+async def delete_product(product_id: str, current_user: User = Depends(get_current_user)):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0, "user_id": 1})
+    if not product:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    if product.get("user_id") != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні оголошення")
+    await db.products.update_one({"id": product_id}, {"$set": {"status": "deleted"}})
+    return {"message": "Оголошення видалено"}
+
+@api_router.get("/products/{product_id}/messages")
+async def get_product_messages(product_id: str, current_user: User = Depends(get_current_user)):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0, "user_id": 1})
+    if not product:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+
+    messages = await db.product_messages.find({
+        "product_id": product_id,
+        "$or": [
+            {"sender_id": current_user.user_id},
+            {"receiver_id": current_user.user_id},
+        ]
+    }, {"_id": 0}).sort("created_at", 1).to_list(200)
+    for message in messages:
+        if isinstance(message.get("created_at"), str):
+            message["created_at"] = datetime.fromisoformat(message["created_at"])
+    return messages
+
+@api_router.post("/products/{product_id}/messages")
+async def create_product_message(
+    product_id: str,
+    data: ProductMessageCreate,
+    current_user: User = Depends(get_current_user)
+):
+    content = data.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Повідомлення не може бути порожнім")
+    if len(content) > 2000:
+        raise HTTPException(status_code=400, detail="Повідомлення не може містити понад 2000 символів")
+
+    product = await db.products.find_one({"id": product_id}, {"_id": 0, "user_id": 1})
+    if not product:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    if product.get("user_id") == "system":
+        raise HTTPException(status_code=400, detail="Для цього оголошення внутрішня переписка недоступна")
+    if product.get("user_id") == current_user.user_id and not data.receiver_id:
+        raise HTTPException(status_code=400, detail="Оберіть отримувача повідомлення")
+
+    receiver_id = data.receiver_id or product.get("user_id")
+    receiver = await db.users.find_one({"user_id": receiver_id}, {"_id": 0, "user_id": 1})
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Отримувача не знайдено")
+    if receiver_id == current_user.user_id:
+        raise HTTPException(status_code=400, detail="Не можна надіслати повідомлення самому собі")
+
+    message = ProductMessage(
+        product_id=product_id,
+        sender_id=current_user.user_id,
+        sender_name=current_user.name,
+        receiver_id=receiver_id,
+        content=content,
+    )
+    doc = message.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.product_messages.insert_one(doc)
+    return message
 
 # ==================== Health Check ====================
 
@@ -701,8 +967,8 @@ async def seed_data():
             "reception_hours": "Вт: 10:00 - 14:00, Чт: 14:00 - 18:00",
             "head_name": "Іван Петрович Коваленко",
             "head_position": "Сільський голова",
-            "head_photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face",
-            "hero_image": "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=1200&h=600&fit=crop",
+            "head_photo": "/api/storage/site/photo-1507003211169-0a1dd7228f2d.jpg",
+            "hero_image": "/api/storage/site/photo-1500382017468-9049fed747ef.jpg",
             "population": 3240,
             "area": "18.5 км²",
             "founded_year": 1587
@@ -719,8 +985,8 @@ async def seed_data():
             "reception_hours": "Пн: 10:00 - 14:00, Ср: 14:00 - 18:00",
             "head_name": "Марія Олександрівна Шевченко",
             "head_position": "Голова ради",
-            "head_photo": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=face",
-            "hero_image": "https://images.unsplash.com/photo-1449844908441-8829872d2607?w=1200&h=600&fit=crop",
+            "head_photo": "/api/storage/site/photo-1573496359142-b8d87734a5a2.jpg",
+            "hero_image": "/api/storage/site/photo-1449844908441-8829872d2607.jpg",
             "population": 5680,
             "area": "12.3 км²",
             "founded_year": 1985
@@ -735,7 +1001,7 @@ async def seed_data():
             "title": "Відкриття нового дитячого майданчика у селі Зелене",
             "content": "Сьогодні у селі Зелене відбулося урочисте відкриття сучасного дитячого майданчика.",
             "excerpt": "Сучасний дитячий майданчик відкрився у селі Зелене. На спорудження виділено 450 тис. грн.",
-            "image": "https://images.unsplash.com/photo-1566140967404-b8b3932483f5?w=800&h=500&fit=crop",
+            "image": "/api/storage/site/photo-1566140967404-b8b3932483f5.jpg",
             "category": "Інфраструктура",
             "rada": "rada1",
             "author": "Прес-служба Ради №1",
@@ -747,7 +1013,7 @@ async def seed_data():
             "title": "У мікрорайоні Сонячний запрацював новий медичний пункт",
             "content": "З початку грудня у мікрорайоні Сонячний розпочав роботу оновлений медичний пункт.",
             "excerpt": "Оновлений медичний пункт тепер приймає жителів мікрорайону Сонячний.",
-            "image": "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=800&h=500&fit=crop",
+            "image": "/api/storage/site/photo-1519494026892-80bbd2d6fd0d.jpg",
             "category": "Медицина",
             "rada": "rada2",
             "author": "Прес-служба Ради №2",
@@ -759,7 +1025,7 @@ async def seed_data():
             "title": "Сесія ОТГ: затверджено бюджет на 2025 рік",
             "content": "На черговій сесії об'єднаної територіальної громади було затверджено бюджет на 2025 рік.",
             "excerpt": "Затверджено бюджет ОТГ на 2025 рік. Пріоритетні галузі: освіта, медицина, інфраструктура.",
-            "image": "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&h=500&fit=crop",
+            "image": "/api/storage/site/photo-1554224155-8d04cb21cd6c.jpg",
             "category": "Офіційно",
             "rada": "all",
             "author": "Секретар ради",
@@ -771,7 +1037,7 @@ async def seed_data():
             "title": "Фестиваль 'Зимові свята' у нашій громаді",
             "content": "Запрошуємо всіх мешканців на традиційний фестиваль 'Зимові свята'.",
             "excerpt": "Фестиваль 'Зимові свята'. Ялинка, конкурси, подарунки, атракціони!",
-            "image": "https://images.unsplash.com/photo-1543589077-47d81606c1bf?w=800&h=500&fit=crop",
+            "image": "/api/storage/site/photo-1543589077-47d81606c1bf.jpg",
             "category": "Культура",
             "rada": "all",
             "author": "Відділ культури",
@@ -787,7 +1053,7 @@ async def seed_data():
             "id": str(uuid.uuid4()),
             "name": "Іван Петрович Коваленко",
             "position": "Сільський голова",
-            "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face",
+            "photo": "/api/storage/site/photo-1507003211169-0a1dd7228f2d.jpg",
             "phone": "+38 (0312) 45-67-89",
             "email": "kovalenko@rada1.ua",
             "biography": "Народився у 1965 році в селі Зелене. Освіта вища економічна.",
@@ -797,7 +1063,7 @@ async def seed_data():
             "id": str(uuid.uuid4()),
             "name": "Марія Олександрівна Шевченко",
             "position": "Голова ради",
-            "photo": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=face",
+            "photo": "/api/storage/site/photo-1573496359142-b8d87734a5a2.jpg",
             "phone": "+38 (0312) 56-78-90",
             "email": "shevchenko@rada2.ua",
             "biography": "Народилася у 1972 році. Освіта вища управлінська.",
@@ -817,7 +1083,7 @@ async def seed_data():
             "is_urgent": False,
             "price": 85000,
             "contact_info": "+38 (067) 123-45-67",
-            "image": "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400&h=300&fit=crop",
+            "image": "/api/storage/site/photo-1568605114967-8130f3a36994.jpg",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
             "user_id": "system"
@@ -846,7 +1112,7 @@ async def seed_data():
             "name": "Мед від місцевого пасічника",
             "description": "Натуральний квітковий мед, зібраний у екологічно чистому районі.",
             "price": 250,
-            "image": "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=400&h=300&fit=crop",
+            "image": "/api/storage/site/photo-1587049352846-4a222e784d38.jpg",
             "seller": "Пасіка 'Зелений мед'",
             "rating": 4.9,
             "reviews": 45,
@@ -860,7 +1126,7 @@ async def seed_data():
             "name": "Домашнє варення з малини",
             "description": "Смачне домашнє варення без консервантів. Банка 0.5 л.",
             "price": 80,
-            "image": "https://images.unsplash.com/photo-1568051243851-f9b136146e97?w=400&h=300&fit=crop",
+            "image": "/api/storage/site/photo-1568051243851-f9b136146e97.jpg",
             "seller": "Господиня Олена",
             "rating": 5.0,
             "reviews": 23,

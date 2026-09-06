@@ -54,7 +54,7 @@ export function Footer() {
               </li>
               <li>
                 <Link to="/marketplace" className="text-sm text-white/70 hover:text-white transition-colors">
-                  Маркетплейс
+                  Купи-продай
                 </Link>
               </li>
               <li>

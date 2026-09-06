@@ -5,5 +5,7 @@ export { RadaPage } from './RadaPage';
 export { MapPage } from './MapPage';
 export { ContactsPage } from './ContactsPage';
 export { MarketplacePage } from './MarketplacePage';
+export { MarketplaceProductPage } from './MarketplaceProductPage';
 export { ForumPage } from './ForumPage';
-export { LoginPage, RegisterPage, AuthCallback } from './AuthPages';
+export { ForumTopicPage } from './ForumTopicPage';
+export { LoginPage, RegisterPage } from './AuthPages';

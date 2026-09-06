@@ -9,10 +9,11 @@ import {
   MapPage,
   ContactsPage,
   MarketplacePage,
+  MarketplaceProductPage,
   ForumPage,
+  ForumTopicPage,
   LoginPage,
-  RegisterPage,
-  AuthCallback
+  RegisterPage
 } from './pages';
 import { useAuthStore } from './stores';
 import './App.css';
@@ -51,17 +52,11 @@ function ProtectedRoute({ children }) {
 }
 
 function AppRouter() {
-  const location = useLocation();
   const { checkAuth } = useAuthStore();
 
   useEffect(() => {
     checkAuth();
   }, []);
-
-  // Check URL fragment for session_id - detect OAuth callback
-  if (location.hash?.includes('session_id=')) {
-    return <AuthCallback />;
-  }
 
   return (
     <Routes>
@@ -71,7 +66,9 @@ function AppRouter() {
         <Route path="/news" element={<NewsPage />} />
         <Route path="/announcements" element={<AnnouncementsPage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
+        <Route path="/marketplace/:productId" element={<MarketplaceProductPage />} />
         <Route path="/forum" element={<ForumPage />} />
+        <Route path="/forum/:topicId" element={<ForumTopicPage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/contacts" element={<ContactsPage />} />
         <Route path="/rada/:radaId" element={<RadaPage />} />

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL;
+const API_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 // Auth Store
 export const useAuthStore = create(
@@ -73,12 +73,6 @@ export const useAuthStore = create(
       },
       
       checkAuth: async () => {
-        // CRITICAL: If returning from OAuth callback, skip the /me check.
-        if (window.location.hash?.includes('session_id=')) {
-          set({ isLoading: false });
-          return;
-        }
-        
         try {
           const response = await fetch(`${API_URL}/api/auth/me`, {
             credentials: 'include'

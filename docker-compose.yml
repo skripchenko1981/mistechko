@@ -32,6 +32,11 @@ services:
       - DB_NAME=moe_mistechko
       - CORS_ORIGINS=http://localhost,http://localhost:3000,http://localhost:80
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - R2_ENDPOINT_URL=${R2_ENDPOINT_URL}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-mistechko}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
+      - R2_REGION=${R2_REGION:-auto}
     depends_on:
       mongodb:
         condition: service_healthy

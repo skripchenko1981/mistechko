@@ -41,7 +41,7 @@ export function HomePage() {
       <section className="relative h-[600px] flex items-center">
         <div className="absolute inset-0">
           <img 
-            src="https://images.unsplash.com/photo-1486325212027-8081e485255e?w=1600&h=800&fit=crop"
+            src="/api/storage/site/photo-1486325212027-8081e485255e.jpg"
             alt="Hero"
             className="w-full h-full object-cover"
           />
@@ -157,7 +157,7 @@ export function HomePage() {
               className="relative"
             >
               <img 
-                src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=800&h=600&fit=crop"
+                src="/api/storage/site/photo-1449824913935-59a10b8d2000.jpg"
                 alt="Community"
                 className="rounded-2xl shadow-xl"
               />

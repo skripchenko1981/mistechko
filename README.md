@@ -45,7 +45,6 @@
 
 ### Авторизація
 - 🔐 JWT автентифікація (email/пароль)
-- 🔑 Google OAuth (Emergent Auth)
 - 👥 Рівні доступу: superadmin, admin, moderator, user
 
 ### Для кожної ради
@@ -64,7 +63,7 @@
 | **Frontend** | React 19, Tailwind CSS, Framer Motion, Leaflet, Zustand |
 | **Backend** | FastAPI (Python 3.11), Pydantic v2 |
 | **База даних** | MongoDB 7.0 |
-| **Авторизація** | JWT, Google OAuth |
+| **Авторизація** | JWT |
 | **Контейнеризація** | Docker, Docker Compose |
 | **Веб-сервер** | Nginx (production) |
 
@@ -326,7 +325,6 @@ volumes:
 |-------|----------|------|
 | POST | `/api/auth/register` | Реєстрація |
 | POST | `/api/auth/login` | Вхід |
-| POST | `/api/auth/google/session` | Google OAuth |
 | GET | `/api/auth/me` | Поточний користувач |
 | POST | `/api/auth/logout` | Вихід |
 
