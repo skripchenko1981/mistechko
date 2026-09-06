@@ -8,6 +8,8 @@ import boto3
 import mimetypes
 import os
 import logging
+import hashlib
+import aiohttp
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
@@ -38,6 +40,13 @@ R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
 R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
 R2_REGION = os.environ.get('R2_REGION', 'auto')
 MAX_UPLOAD_SIZE = 25 * 1024 * 1024
+
+# Facebook Page news import (optional; disabled until both values are configured).
+FACEBOOK_PAGE_ID = os.environ.get('FACEBOOK_PAGE_ID', '').strip()
+FACEBOOK_PAGE_ACCESS_TOKEN = os.environ.get('FACEBOOK_PAGE_ACCESS_TOKEN', '').strip()
+FACEBOOK_GRAPH_API_VERSION = os.environ.get('FACEBOOK_GRAPH_API_VERSION', 'v25.0').strip()
+FACEBOOK_SYNC_INTERVAL_SECONDS = int(os.environ.get('FACEBOOK_SYNC_INTERVAL_SECONDS', '900'))
+facebook_sync_task = None
 
 if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]):
     r2_client = boto3.client(
@@ -108,6 +117,9 @@ class NewsItem(BaseModel):
     author: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     views: int = 0
+    source: Optional[str] = None
+    source_url: Optional[str] = None
+    facebook_id: Optional[str] = None
 
 class NewsCreate(BaseModel):
     title: str
@@ -507,6 +519,129 @@ async def download_file(object_key: str):
 
 # ==================== News Endpoints ====================
 
+def facebook_import_enabled():
+    return bool(FACEBOOK_PAGE_ID and FACEBOOK_PAGE_ACCESS_TOKEN)
+
+
+def facebook_post_image_url(post):
+    full_picture = post.get("full_picture")
+    if full_picture:
+        return full_picture
+
+    attachments = post.get("attachments", {}).get("data", [])
+    if attachments:
+        media = attachments[0].get("media", {})
+        image = media.get("image", {})
+        return image.get("src")
+    return None
+
+
+async def store_facebook_image(session, image_url, facebook_id):
+    if not image_url or r2_client is None:
+        return None
+
+    try:
+        async with session.get(image_url, allow_redirects=True) as response:
+            if response.status != 200:
+                return None
+            content_type = response.headers.get("Content-Type", "image/jpeg").split(";")[0]
+            if not content_type.startswith("image/"):
+                return None
+            content = await response.read()
+
+        suffix = mimetypes.guess_extension(content_type) or ".jpg"
+        object_key = f"news/facebook/{hashlib.sha256(facebook_id.encode()).hexdigest()}{suffix}"
+        await asyncio.to_thread(
+            r2_client.put_object,
+            Bucket=R2_BUCKET_NAME,
+            Key=object_key,
+            Body=content,
+            ContentType=content_type,
+            CacheControl="public, max-age=31536000, immutable",
+        )
+        return storage_url(object_key)
+    except Exception as error:
+        logger.warning("Could not save Facebook image to R2: %s", error)
+        return None
+
+
+async def sync_facebook_news_from_page():
+    if not facebook_import_enabled():
+        return {
+            "enabled": False,
+            "imported": 0,
+            "message": "Facebook sync is not configured.",
+        }
+
+    endpoint = f"https://graph.facebook.com/{FACEBOOK_GRAPH_API_VERSION}/{FACEBOOK_PAGE_ID}/posts"
+    params = {
+        "access_token": FACEBOOK_PAGE_ACCESS_TOKEN,
+        "fields": "id,message,story,created_time,permalink_url,full_picture,attachments{media{image{src}}}",
+        "limit": "25",
+    }
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(endpoint, params=params) as response:
+                payload = await response.json(content_type=None)
+                if response.status >= 400:
+                    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+                    message = error.get("message", "Facebook API request failed")
+                    logger.error("Facebook news sync failed: %s", message)
+                    return {"enabled": True, "imported": 0, "error": message}
+
+            imported = 0
+            for post in payload.get("data", []):
+                facebook_id = post.get("id")
+                message = (post.get("message") or post.get("story") or "").strip()
+                if not facebook_id or not message:
+                    continue
+
+                created_at_value = post.get("created_time")
+                try:
+                    created_at = datetime.fromisoformat(created_at_value.replace("Z", "+00:00"))
+                except (AttributeError, ValueError):
+                    created_at = datetime.now(timezone.utc)
+
+                first_line = next((line.strip() for line in message.splitlines() if line.strip()), message)
+                title = first_line[:120].strip()
+                excerpt = " ".join(message.split())[:240].strip()
+                image = await store_facebook_image(session, facebook_post_image_url(post), facebook_id)
+                existing = await db.news.find_one({"facebook_id": facebook_id}, {"id": 1})
+                news_id = existing.get("id") if existing else str(uuid.uuid4())
+
+                update = {
+                    "title": title,
+                    "content": message,
+                    "excerpt": excerpt,
+                    "category": "Офіційно",
+                    "rada": "all",
+                    "author": "Томаківська громада",
+                    "created_at": created_at,
+                    "source": "facebook",
+                    "source_url": post.get("permalink_url") or f"https://www.facebook.com/{facebook_id}",
+                    "facebook_id": facebook_id,
+                }
+                if image:
+                    update["image"] = image
+
+                await db.news.update_one(
+                    {"facebook_id": facebook_id},
+                    {
+                        "$set": update,
+                        "$setOnInsert": {"id": news_id, "views": 0},
+                    },
+                    upsert=True,
+                )
+                imported += 1
+
+        logger.info("Facebook news sync completed: %s posts imported", imported)
+        return {"enabled": True, "imported": imported}
+    except Exception as error:
+        logger.error("Facebook news sync request failed: %s", error)
+        return {"enabled": True, "imported": 0, "error": "Не вдалося отримати новини з Facebook"}
+
 @api_router.get("/news", response_model=List[NewsItem])
 async def get_news(
     rada: Optional[str] = Query(None),
@@ -527,6 +662,13 @@ async def get_news(
             item["created_at"] = datetime.fromisoformat(item["created_at"])
     
     return news
+
+
+@api_router.post("/news/sync-facebook")
+async def sync_facebook_news(current_user: User = Depends(get_current_user)):
+    if current_user.role not in ["superadmin", "admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return await sync_facebook_news_from_page()
 
 @api_router.get("/news/{news_id}")
 async def get_news_item(news_id: str):
@@ -1045,11 +1187,23 @@ app.add_middleware(
 # Startup event - seed data
 @app.on_event("startup")
 async def startup_event():
+    global facebook_sync_task
     await migrate_announcements()
     # Check if data exists
     news_count = await db.news.count_documents({})
     if news_count == 0:
         await seed_data()
+    if facebook_import_enabled():
+        await sync_facebook_news_from_page()
+        facebook_sync_task = asyncio.create_task(facebook_news_sync_loop())
+    else:
+        logger.info("Facebook news sync is disabled: configure FACEBOOK_PAGE_ID and FACEBOOK_PAGE_ACCESS_TOKEN")
+
+
+async def facebook_news_sync_loop():
+    while True:
+        await asyncio.sleep(max(FACEBOOK_SYNC_INTERVAL_SECONDS, 300))
+        await sync_facebook_news_from_page()
 
 
 async def migrate_announcements():
@@ -1308,4 +1462,11 @@ async def seed_data():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    global facebook_sync_task
+    if facebook_sync_task:
+        facebook_sync_task.cancel()
+        try:
+            await facebook_sync_task
+        except asyncio.CancelledError:
+            pass
     client.close()

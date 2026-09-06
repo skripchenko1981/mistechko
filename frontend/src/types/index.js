@@ -22,6 +22,9 @@
  * @property {string} author
  * @property {string} created_at
  * @property {number} views
+ * @property {string} [source]
+ * @property {string} [source_url]
+ * @property {string} [facebook_id]
  */
 
 /**

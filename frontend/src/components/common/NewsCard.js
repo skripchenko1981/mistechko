@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Calendar, Eye, ArrowRight } from 'lucide-react';
+import { Calendar, Eye, ArrowRight, ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 
@@ -54,6 +54,17 @@ export function NewsCard({ news, index = 0 }) {
             {news.title}
           </h3>
           <p className="text-gray-600 text-sm mb-4 line-clamp-2 flex-grow">{news.excerpt}</p>
+          {news.source === 'facebook' && news.source_url && (
+            <a
+              href={news.source_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-3 inline-flex items-center gap-1 text-xs text-[#1877f2] hover:underline"
+            >
+              Джерело: Facebook
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
           <div className="flex items-center justify-between text-xs text-gray-400 pt-3 border-t">
             <div className="flex items-center gap-4">
               <span className="flex items-center gap-1">
