@@ -65,63 +65,63 @@ export const weatherForecast = [
 export const mapPointsData = [
   {
     id: '1',
-    name: 'Амбулаторія с. Зелене',
+    name: 'Томаківська центральна лікарня',
     type: 'medicine',
-    coordinates: [48.9228, 24.7111],
-    address: 'вул. Центральна, 23, с. Зелене',
-    phone: '+38 (0312) 45-67-12',
-    description: 'Пн-Пт: 8:00-18:00, Сб: 9:00-14:00',
-    rada: 'rada1'
+    coordinates: [47.8107, 34.7472],
+    address: 'смт Томаківка, Дніпропетровська область',
+    phone: '',
+    description: 'Медичний заклад Томаківської громади',
+    community: 'tomakivska'
   },
   {
     id: '2',
-    name: 'Школа №1 с. Зелене',
+    name: 'Томаківський ліцей',
     type: 'education',
-    coordinates: [48.9245, 24.7135],
-    address: 'вул. Шкільна, 5, с. Зелене',
-    phone: '+38 (0312) 45-67-23',
-    description: 'Загальноосвітня школа I-III ступенів',
-    rada: 'rada1'
+    coordinates: [47.8165, 34.7539],
+    address: 'смт Томаківка, Дніпропетровська область',
+    phone: '',
+    description: 'Освітній заклад громади',
+    community: 'tomakivska'
   },
   {
     id: '3',
-    name: 'Сільська рада',
+    name: 'Томаківська селищна рада',
     type: 'admin',
-    coordinates: [48.9235, 24.7120],
-    address: 'вул. Центральна, 45, с. Зелене',
-    phone: '+38 (0312) 45-67-89',
-    description: 'Прийом громадян: Вт, Чт',
-    rada: 'rada1'
+    coordinates: [47.813333, 34.749167],
+    address: 'смт Томаківка, Нікопольський район, Дніпропетровська область',
+    phone: '',
+    description: 'Адміністративний центр Томаківської громади',
+    community: 'tomakivska'
   },
   {
     id: '5',
-    name: 'Медичний пункт Сонячний',
+    name: 'Мирівський медичний пункт',
     type: 'medicine',
-    coordinates: [48.9350, 24.7250],
-    address: 'просп. Сонячний, 8, мікрорайон Сонячний',
-    phone: '+38 (0312) 56-78-12',
-    description: 'Пн-Пт: 8:00-16:00',
-    rada: 'rada2'
+    coordinates: [47.7727, 34.7305],
+    address: 'с. Мирове, Нікопольський район, Дніпропетровська область',
+    phone: '',
+    description: 'Медичний заклад Мирівської громади',
+    community: 'myrivska'
   },
   {
     id: '6',
-    name: 'Школа №3',
+    name: 'Мирівський ліцей',
     type: 'education',
-    coordinates: [48.9365, 24.7275],
-    address: 'вул. Освітня, 3, мікрорайон Сонячний',
-    phone: '+38 (0312) 56-78-23',
-    description: 'Загальноосвітня школа I-III ступенів',
-    rada: 'rada2'
+    coordinates: [47.7688, 34.7364],
+    address: 'с. Мирове, Нікопольський район, Дніпропетровська область',
+    phone: '',
+    description: 'Освітній заклад громади',
+    community: 'myrivska'
   },
   {
     id: '7',
-    name: 'Рада мікрорайону',
+    name: 'Мирівська сільська рада',
     type: 'admin',
-    coordinates: [48.9355, 24.7260],
-    address: 'просп. Сонячний, 12, мікрорайон Сонячний',
-    phone: '+38 (0312) 56-78-90',
-    description: 'Прийом громадян: Пн, Ср',
-    rada: 'rada2'
+    coordinates: [47.77079, 34.73345],
+    address: 'с. Мирове, Нікопольський район, Дніпропетровська область',
+    phone: '',
+    description: 'Адміністративний центр Мирівської громади',
+    community: 'myrivska'
   }
 ];
 

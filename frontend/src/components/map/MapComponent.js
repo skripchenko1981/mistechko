@@ -1,10 +1,18 @@
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useEffect, useMemo, useState } from 'react';
+import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { Link } from 'react-router-dom';
+import { MapPin, Plus, X } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import { mapPointsData } from '../../data/mockData';
+import { useAuthStore } from '../../stores';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Textarea } from '../ui/textarea';
 
-// Fix for default marker icons
+const API_URL = process.env.REACT_APP_BACKEND_URL || '';
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
@@ -13,21 +21,40 @@ L.Icon.Default.mergeOptions({
 });
 
 const typeColors = {
+  shop: '#27ae60',
+  organization: '#8e44ad',
   medicine: '#e74c3c',
   education: '#3498db',
-  trade: '#27ae60',
+  trade: '#16a085',
   transport: '#9b59b6',
   admin: '#e67e22',
-  other: '#95a5a6'
+  service: '#d35400',
+  other: '#95a5a6',
 };
 
 const typeLabels = {
+  shop: 'Магазини',
+  organization: 'Організації',
   medicine: 'Медицина',
   education: 'Освіта',
   trade: 'Торгівля',
   transport: 'Транспорт',
   admin: 'Адміністрація',
-  other: 'Інше'
+  service: 'Послуги',
+  other: 'Інше',
+};
+
+const communities = {
+  tomakivska: {
+    name: 'Томаківська громада',
+    center: [47.813333, 34.749167],
+    zoom: 13,
+  },
+  myrivska: {
+    name: 'Мирівська громада',
+    center: [47.77079, 34.73345],
+    zoom: 13,
+  },
 };
 
 const createCustomIcon = (type) => {
@@ -37,89 +64,218 @@ const createCustomIcon = (type) => {
     html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
-    popupAnchor: [0, -12]
+    popupAnchor: [0, -12],
   });
 };
 
+const createCommunityIcon = (color) => L.divIcon({
+  className: 'community-marker',
+  html: `<div style="background-color: ${color}; color: white; width: 32px; height: 32px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; font-weight: 700;">●</div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+  popupAnchor: [0, -16],
+});
+
+function MapClickHandler({ enabled, onPick }) {
+  useMapEvents({
+    click: (event) => {
+      if (enabled) onPick([event.latlng.lat, event.latlng.lng]);
+    },
+  });
+  return null;
+}
+
+function ObjectForm({ object, setObject, onSubmit, onCancel, isSaving, error }) {
+  return (
+    <div className="mb-4 rounded-xl border border-[#b9dcc5] bg-[#f6fcf8] p-4 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-[#1e3a5f]">Новий об’єкт на мапі</h3>
+          <p className="text-sm text-gray-600">Точку вже вибрано. Заповніть інформацію про магазин або організацію.</p>
+        </div>
+        <button type="button" onClick={onCancel} className="text-gray-500 hover:text-gray-800" aria-label="Закрити">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="map-object-name">Назва *</Label>
+          <Input id="map-object-name" value={object.name} maxLength={120} required placeholder="Наприклад: Магазин 'Добробут'" onChange={(event) => setObject({ ...object, name: event.target.value })} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="map-object-type">Тип об’єкта *</Label>
+          <select id="map-object-type" value={object.type} onChange={(event) => setObject({ ...object, type: event.target.value })} className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm">
+            <option value="shop">Магазин</option>
+            <option value="organization">Організація</option>
+            <option value="service">Послуга</option>
+            <option value="medicine">Медицина</option>
+            <option value="education">Освіта</option>
+            <option value="other">Інше</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="map-object-community">Громада *</Label>
+          <select id="map-object-community" value={object.community} onChange={(event) => setObject({ ...object, community: event.target.value })} className="flex h-9 w-full rounded-md border border-input bg-white px-3 py-1 text-sm">
+            <option value="tomakivska">Томаківська громада</option>
+            <option value="myrivska">Мирівська громада</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="map-object-address">Адреса</Label>
+          <Input id="map-object-address" value={object.address} maxLength={180} placeholder="Вулиця, номер будинку" onChange={(event) => setObject({ ...object, address: event.target.value })} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="map-object-phone">Телефон</Label>
+          <Input id="map-object-phone" type="tel" value={object.phone} maxLength={30} placeholder="+380..." onChange={(event) => setObject({ ...object, phone: event.target.value })} />
+        </div>
+        <div className="space-y-1 md:col-span-2">
+          <Label htmlFor="map-object-description">Опис</Label>
+          <Textarea id="map-object-description" value={object.description} maxLength={1000} placeholder="Графік роботи або додаткова інформація" onChange={(event) => setObject({ ...object, description: event.target.value })} />
+        </div>
+        <p className="text-xs text-gray-500 md:col-span-2">Координати: {object.latitude.toFixed(6)}, {object.longitude.toFixed(6)}</p>
+        {error && <p className="text-sm text-red-600 md:col-span-2">{error}</p>}
+        <div className="flex gap-2 md:col-span-2">
+          <Button type="submit" className="bg-[#27ae60] hover:bg-[#219653]" disabled={isSaving}>{isSaving ? 'Збереження...' : 'Додати об’єкт'}</Button>
+          <Button type="button" variant="outline" onClick={onCancel}>Скасувати</Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export function MapComponent({ height = '400px', rada = null }) {
+  const legacyCommunity = rada === 'rada1' ? 'tomakivska' : rada === 'rada2' ? 'myrivska' : 'all';
+  const [activeCommunity, setActiveCommunity] = useState(legacyCommunity);
   const [activeType, setActiveType] = useState(null);
-  
-  const filteredPoints = mapPointsData.filter(point => {
-    if (rada && point.rada !== rada) return false;
+  const [serverObjects, setServerObjects] = useState([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const { isAuthenticated, token, user } = useAuthStore();
+  const [newObject, setNewObject] = useState({
+    name: '', type: 'shop', community: legacyCommunity === 'all' ? 'tomakivska' : legacyCommunity,
+    latitude: communities.tomakivska.center[0], longitude: communities.tomakivska.center[1], address: '', phone: '', description: '',
+  });
+
+  useEffect(() => {
+    const params = activeCommunity !== 'all' ? `?community=${activeCommunity}` : '';
+    fetch(`${API_URL}/api/map/objects${params}`)
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setServerObjects(Array.isArray(data) ? data : []))
+      .catch(() => setServerObjects([]));
+  }, [activeCommunity]);
+
+  const allPoints = useMemo(() => [
+    ...mapPointsData,
+    ...serverObjects.map((object) => ({ ...object, coordinates: [object.latitude, object.longitude] })),
+  ], [serverObjects]);
+
+  const filteredPoints = allPoints.filter((point) => {
+    if (activeCommunity !== 'all' && point.community !== activeCommunity) return false;
     if (activeType && point.type !== activeType) return false;
     return true;
   });
 
-  const center = rada === 'rada1' 
-    ? [48.9235, 24.7120] 
-    : rada === 'rada2' 
-      ? [48.9355, 24.7260] 
-      : [48.9290, 24.7185];
+  const center = activeCommunity === 'all' ? [47.792, 34.741] : communities[activeCommunity].center;
+  const zoom = activeCommunity === 'all' ? 12 : communities[activeCommunity].zoom;
+
+  const startAdding = () => {
+    setFormError('');
+    setIsAdding(true);
+  };
+
+  const handleMapPick = ([latitude, longitude]) => {
+    setNewObject((current) => ({ ...current, latitude, longitude, community: activeCommunity === 'all' ? current.community : activeCommunity }));
+    setFormError('');
+  };
+
+  const cancelAdding = () => {
+    setIsAdding(false);
+    setFormError('');
+  };
+
+  const saveObject = async (event) => {
+    event.preventDefault();
+    setIsSaving(true);
+    setFormError('');
+    try {
+      const response = await fetch(`${API_URL}/api/map/objects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        credentials: 'include',
+        body: JSON.stringify(newObject),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'Не вдалося додати об’єкт.');
+      if (activeCommunity === 'all' || data.community === activeCommunity) setServerObjects((current) => [data, ...current]);
+      setNewObject({ ...newObject, name: '', address: '', phone: '', description: '' });
+      setIsAdding(false);
+    } catch (error) {
+      setFormError(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteObject = async (objectId) => {
+    if (!window.confirm('Видалити цей об’єкт з мапи?')) return;
+    const response = await fetch(`${API_URL}/api/map/objects/${objectId}`, {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (response.ok) setServerObjects((current) => current.filter((object) => object.id !== objectId));
+  };
 
   return (
     <div data-testid="map-component">
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          onClick={() => setActiveType(null)}
-          className={`px-3 py-1 rounded-full text-sm transition-colors ${
-            activeType === null 
-              ? 'bg-[#1e3a5f] text-white' 
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          Всі
-        </button>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-sm font-medium text-[#1e3a5f]">Громада:</span>
+        <button type="button" onClick={() => setActiveCommunity('all')} className={`rounded-full px-3 py-1 text-sm ${activeCommunity === 'all' ? 'bg-[#1e3a5f] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Обидві</button>
+        {Object.entries(communities).map(([key, community]) => (
+          <button type="button" key={key} onClick={() => setActiveCommunity(key)} className={`rounded-full px-3 py-1 text-sm ${activeCommunity === key ? 'bg-[#1e3a5f] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{community.name}</button>
+        ))}
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button type="button" onClick={() => setActiveType(null)} className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm ${activeType === null ? 'bg-[#1e3a5f] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Всі об’єкти</button>
         {Object.entries(typeLabels).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setActiveType(activeType === key ? null : key)}
-            className={`px-3 py-1 rounded-full text-sm transition-colors flex items-center gap-2 ${
-              activeType === key 
-                ? 'bg-[#1e3a5f] text-white' 
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <span 
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: typeColors[key] }}
-            />
-            {label}
+          <button type="button" key={key} onClick={() => setActiveType(activeType === key ? null : key)} className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm ${activeType === key ? 'bg-[#1e3a5f] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: typeColors[key] }} />{label}
           </button>
         ))}
       </div>
 
-      {/* Map */}
-      <div style={{ height }} className="rounded-xl overflow-hidden shadow-lg">
-        <MapContainer
-          center={center}
-          zoom={14}
-          style={{ height: '100%', width: '100%' }}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
+      {isAuthenticated ? (
+        <div className="mb-4 flex items-center gap-3 rounded-lg bg-white p-3 shadow-sm">
+          <Button type="button" onClick={startAdding} className="bg-[#e67e22] hover:bg-[#d35400]" disabled={isAdding}><Plus className="mr-2 h-4 w-4" /> Додати об’єкт на мапу</Button>
+          {isAdding && <span className="text-sm text-gray-600">Клікніть на потрібне місце на мапі.</span>}
+        </div>
+      ) : (
+        <p className="mb-4 rounded-lg bg-white p-3 text-sm text-gray-600 shadow-sm"><Link to="/login" className="font-medium text-[#e67e22] hover:underline">Увійдіть</Link>, щоб додати магазин або організацію на мапу.</p>
+      )}
+
+      {isAdding && <ObjectForm object={newObject} setObject={setNewObject} onSubmit={saveObject} onCancel={cancelAdding} isSaving={isSaving} error={formError} />}
+
+      <div style={{ height }} className="overflow-hidden rounded-xl shadow-lg">
+        <MapContainer key={activeCommunity} center={center} zoom={zoom} style={{ height: '100%', width: '100%' }}>
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
+          <MapClickHandler enabled={isAdding} onPick={handleMapPick} />
+          {activeCommunity === 'all' && Object.entries(communities).map(([key, community], index) => (
+            <Marker key={key} position={community.center} icon={createCommunityIcon(index === 0 ? '#1e3a5f' : '#27ae60')}>
+              <Popup><strong>{community.name}</strong><br />Адміністративний центр громади</Popup>
+            </Marker>
+          ))}
           {filteredPoints.map((point) => (
-            <Marker
-              key={point.id}
-              position={point.coordinates}
-              icon={createCustomIcon(point.type)}
-            >
+            <Marker key={point.id} position={point.coordinates} icon={createCustomIcon(point.type)}>
               <Popup>
-                <div className="min-w-[200px]">
-                  <h4 className="font-bold text-[#1e3a5f] mb-1">{point.name}</h4>
-                  <p className="text-sm text-gray-600 mb-1">{point.address}</p>
-                  {point.phone && (
-                    <p className="text-sm">
-                      <a href={`tel:${point.phone}`} className="text-[#e67e22]">
-                        {point.phone}
-                      </a>
-                    </p>
-                  )}
-                  {point.description && (
-                    <p className="text-xs text-gray-500 mt-1">{point.description}</p>
-                  )}
+                <div className="min-w-[210px]">
+                  <h4 className="mb-1 font-bold text-[#1e3a5f]">{point.name}</h4>
+                  {point.community && <p className="text-xs text-[#27ae60]">{communities[point.community]?.name}</p>}
+                  {point.address && <p className="mb-1 text-sm text-gray-600">{point.address}</p>}
+                  {point.phone && <p className="text-sm"><a href={`tel:${point.phone}`} className="text-[#e67e22]">{point.phone}</a></p>}
+                  {point.description && <p className="mt-1 text-xs text-gray-500">{point.description}</p>}
+                  {point.user_id && user?.user_id === point.user_id && <button type="button" onClick={() => deleteObject(point.id)} className="mt-2 text-xs text-red-600 hover:underline">Видалити об’єкт</button>}
                 </div>
               </Popup>
             </Marker>
@@ -127,17 +283,8 @@ export function MapComponent({ height = '400px', rada = null }) {
         </MapContainer>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-4 mt-4 justify-center text-sm text-gray-600">
-        {Object.entries(typeLabels).map(([key, label]) => (
-          <div key={key} className="flex items-center gap-2">
-            <span 
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: typeColors[key] }}
-            />
-            {label}
-          </div>
-        ))}
+      <div className="mt-4 flex flex-wrap justify-center gap-4 text-sm text-gray-600">
+        {Object.entries(typeLabels).map(([key, label]) => <div key={key} className="flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: typeColors[key] }} />{label}</div>)}
       </div>
     </div>
   );

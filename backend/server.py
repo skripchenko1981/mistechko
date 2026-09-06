@@ -184,6 +184,31 @@ class Document(BaseModel):
     description: str
     number: str
 
+class MapObject(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    type: str
+    community: str
+    latitude: float
+    longitude: float
+    address: str = ""
+    phone: Optional[str] = None
+    description: str = ""
+    author: str
+    user_id: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class MapObjectCreate(BaseModel):
+    name: str
+    type: str
+    community: str
+    latitude: float
+    longitude: float
+    address: str = ""
+    phone: Optional[str] = None
+    description: str = ""
+
 class ForumTopic(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -590,6 +615,61 @@ async def delete_announcement(announcement_id: str, current_user: User = Depends
     
     await db.announcements.delete_one({"id": announcement_id})
     return {"message": "Deleted successfully"}
+
+# ==================== Map Object Endpoints ====================
+
+@api_router.get("/map/objects")
+async def get_map_objects(community: Optional[str] = Query(None), object_type: Optional[str] = Query(None)):
+    query = {}
+    if community and community != "all":
+        query["community"] = community
+    if object_type and object_type != "all":
+        query["type"] = object_type
+    objects = await db.map_objects.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for item in objects:
+        if isinstance(item.get("created_at"), str):
+            item["created_at"] = datetime.fromisoformat(item["created_at"])
+    return objects
+
+@api_router.post("/map/objects", response_model=MapObject)
+async def create_map_object(data: MapObjectCreate, current_user: User = Depends(get_current_user)):
+    allowed_communities = {"tomakivska", "myrivska"}
+    allowed_types = {"shop", "organization", "medicine", "education", "trade", "transport", "admin", "service", "other"}
+    if data.community not in allowed_communities:
+        raise HTTPException(status_code=400, detail="Оберіть Томаківську або Мирівську громаду")
+    if data.type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Оберіть коректний тип об'єкта")
+    if not data.name.strip():
+        raise HTTPException(status_code=400, detail="Вкажіть назву об'єкта")
+    if not (-90 <= data.latitude <= 90 and -180 <= data.longitude <= 180):
+        raise HTTPException(status_code=400, detail="Некоректні координати об'єкта")
+
+    map_object = MapObject(
+        name=data.name.strip(),
+        type=data.type,
+        community=data.community,
+        latitude=data.latitude,
+        longitude=data.longitude,
+        address=data.address.strip(),
+        phone=data.phone.strip() if data.phone else None,
+        description=data.description.strip(),
+        author=current_user.name,
+        user_id=current_user.user_id,
+    )
+    document = map_object.model_dump()
+    document["created_at"] = document["created_at"].isoformat()
+    await db.map_objects.insert_one(document)
+    return map_object
+
+@api_router.delete("/map/objects/{object_id}")
+async def delete_map_object(object_id: str, current_user: User = Depends(get_current_user)):
+    map_object = await db.map_objects.find_one({"id": object_id}, {"_id": 0, "user_id": 1})
+    if not map_object:
+        raise HTTPException(status_code=404, detail="Об'єкт не знайдено")
+    if map_object.get("user_id") != current_user.user_id and current_user.role not in {"admin", "superadmin"}:
+        raise HTTPException(status_code=403, detail="Ви можете видаляти лише власні об'єкти")
+    await db.map_objects.delete_one({"id": object_id})
+    return {"message": "Об'єкт видалено"}
 
 # ==================== Rada Info Endpoints ====================
 
