@@ -13,7 +13,10 @@ export async function uploadFile(file, token) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.detail || 'Не вдалося завантажити файл.');
+    if (response.status === 413) {
+      throw new Error('Файл завеликий. Максимальний розмір — 25 МБ.');
+    }
+    throw new Error(data.detail || `Не вдалося завантажити файл (код ${response.status}).`);
   }
   return data;
 }
