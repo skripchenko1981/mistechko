@@ -817,7 +817,7 @@ async def update_announcement(
         "is_urgent": data.is_urgent,
         "contact_info": normalize_ukrainian_phone(data.contact_info),
         "image": validate_storage_reference(data.image),
-        "expires_at": datetime.now(timezone.utc) + timedelta(days=data.expires_days),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=data.expires_days)).isoformat(),
     }
     await db.announcements.update_one({"id": announcement_id}, {"$set": updates})
     updated = await db.announcements.find_one({"id": announcement_id}, {"_id": 0})
@@ -1282,6 +1282,15 @@ async def migrate_announcements():
             await db.announcements.update_one(
                 {"id": item["id"]},
                 {"$set": {"contact_info": normalized_phone}},
+            )
+
+    dates_cursor = db.announcements.find({}, {"id": 1, "expires_at": 1})
+    async for item in dates_cursor:
+        expires_at = item.get("expires_at")
+        if isinstance(expires_at, datetime):
+            await db.announcements.update_one(
+                {"id": item["id"]},
+                {"$set": {"expires_at": expires_at.isoformat()}},
             )
 
     # Replace the original demo sale listing with a community notice for existing databases.
