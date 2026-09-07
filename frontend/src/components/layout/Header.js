@@ -69,7 +69,7 @@ export function Header() {
             <div className="flex items-center gap-2 text-sm bg-white/10 px-3 py-1 rounded-full" data-testid="weather-widget">
               {getWeatherIcon(currentWeather.icon)}
               <span>{currentWeather.temperature}°C</span>
-              <span className="hidden sm:inline text-white/70">{currentWeather.location}</span>
+              <span className="hidden sm:inline text-white/70">Томаківська та Мирівська громади</span>
             </div>
             
             {isAuthenticated ? (
