@@ -1,14 +1,19 @@
 import { motion } from 'framer-motion';
-import { Clock, Phone, AlertTriangle } from 'lucide-react';
+import { Clock, Phone, AlertTriangle, Pencil } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { announcementCategories } from '../../data/mockData';
+import { useAuthStore } from '../../stores';
 
 export function AnnouncementCard({ announcement, index = 0 }) {
-  const phoneNumber = (announcement.contact_info || '').trim();
-  const phoneHref = phoneNumber
-    ? `${phoneNumber.startsWith('+') ? '+' : ''}${phoneNumber.replace(/\D/g, '')}`
-    : '';
+  const { user } = useAuthStore();
+  const rawPhoneDigits = (announcement.contact_info || '').replace(/\D/g, '');
+  const phoneDigitsWithCountry = rawPhoneDigits.startsWith('38')
+    ? rawPhoneDigits
+    : `38${rawPhoneDigits}`;
+  const phoneNumber = rawPhoneDigits ? `+${phoneDigitsWithCountry}` : '';
+  const phoneHref = phoneNumber;
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -19,6 +24,10 @@ export function AnnouncementCard({ announcement, index = 0 }) {
   };
 
   const category = announcementCategories[announcement.category] || announcementCategories.other;
+  const canEdit = user && (
+    user.user_id === announcement.user_id ||
+    ['superadmin', 'admin', 'moderator'].includes(user.role)
+  );
 
   return (
     <motion.div
@@ -48,6 +57,15 @@ export function AnnouncementCard({ announcement, index = 0 }) {
               </Badge>
             )}
           </div>
+          {canEdit && (
+            <Link
+              to={`/announcements/${announcement.id}/edit`}
+              className="mb-2 inline-flex items-center gap-1 text-xs text-[#1e3a5f] hover:text-[#e67e22] hover:underline"
+            >
+              <Pencil className="h-3 w-3" />
+              Редагувати
+            </Link>
+          )}
           
           <h4 className="font-semibold text-[#1e3a5f] mb-2 line-clamp-2">
             {announcement.title}

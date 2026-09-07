@@ -67,6 +67,7 @@ function AppRouter() {
         <Route path="/news" element={<NewsPage />} />
         <Route path="/announcements" element={<AnnouncementsPage />} />
         <Route path="/announcements/new" element={<ProtectedRoute><AnnouncementCreatePage /></ProtectedRoute>} />
+        <Route path="/announcements/:announcementId/edit" element={<ProtectedRoute><AnnouncementCreatePage /></ProtectedRoute>} />
         <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/marketplace/:productId" element={<MarketplaceProductPage />} />
         <Route path="/forum" element={<ForumPage />} />

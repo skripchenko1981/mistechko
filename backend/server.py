@@ -139,6 +139,18 @@ ANNOUNCEMENT_CATEGORIES = {
 }
 
 
+def normalize_ukrainian_phone(value: str) -> str:
+    digits = re.sub(r"\D", "", value or "")
+    if digits.startswith("38"):
+        digits = digits[2:]
+    if not re.fullmatch(r"0\d{9}", digits):
+        raise HTTPException(
+            status_code=400,
+            detail="Введіть український номер у форматі +38 0XX XXX XX XX",
+        )
+    return f"+38{digits}"
+
+
 class Announcement(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -161,7 +173,18 @@ class AnnouncementCreate(BaseModel):
     is_urgent: bool = False
     contact_info: str
     image: Optional[str] = None
-    expires_days: int = 30
+    expires_days: int = Field(30, ge=1, le=365)
+
+
+class AnnouncementUpdate(BaseModel):
+    title: str
+    description: str
+    category: str
+    rada: str
+    is_urgent: bool = False
+    contact_info: str
+    image: Optional[str] = None
+    expires_days: int = Field(30, ge=1, le=365)
 
 class Deputy(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -748,7 +771,7 @@ async def create_announcement(data: AnnouncementCreate, current_user: User = Dep
         category=data.category,
         rada=data.rada,
         is_urgent=data.is_urgent,
-        contact_info=data.contact_info,
+        contact_info=normalize_ukrainian_phone(data.contact_info),
         image=validate_storage_reference(data.image),
         expires_at=datetime.now(timezone.utc) + timedelta(days=data.expires_days),
         user_id=current_user.user_id
@@ -760,6 +783,45 @@ async def create_announcement(data: AnnouncementCreate, current_user: User = Dep
     await db.announcements.insert_one(doc)
     
     return announcement
+
+
+@api_router.get("/announcements/{announcement_id}", response_model=Announcement)
+async def get_announcement(announcement_id: str):
+    announcement = await db.announcements.find_one({"id": announcement_id}, {"_id": 0})
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+    return announcement
+
+
+@api_router.put("/announcements/{announcement_id}", response_model=Announcement)
+async def update_announcement(
+    announcement_id: str,
+    data: AnnouncementUpdate,
+    current_user: User = Depends(get_current_user),
+):
+    announcement = await db.announcements.find_one({"id": announcement_id}, {"_id": 0})
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Оголошення не знайдено")
+
+    can_edit = announcement.get("user_id") == current_user.user_id or current_user.role in ["superadmin", "admin", "moderator"]
+    if not can_edit:
+        raise HTTPException(status_code=403, detail="Ви можете редагувати лише власні оголошення")
+    if data.category not in ANNOUNCEMENT_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Оберіть категорію інформаційного оголошення")
+
+    updates = {
+        "title": data.title.strip(),
+        "description": data.description.strip(),
+        "category": data.category,
+        "rada": data.rada,
+        "is_urgent": data.is_urgent,
+        "contact_info": normalize_ukrainian_phone(data.contact_info),
+        "image": validate_storage_reference(data.image),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=data.expires_days),
+    }
+    await db.announcements.update_one({"id": announcement_id}, {"$set": updates})
+    updated = await db.announcements.find_one({"id": announcement_id}, {"_id": 0})
+    return updated
 
 @api_router.delete("/announcements/{announcement_id}")
 async def delete_announcement(announcement_id: str, current_user: User = Depends(get_current_user)):
@@ -1209,6 +1271,18 @@ async def facebook_news_sync_loop():
 async def migrate_announcements():
     """Keep the announcements board informational, separate from the marketplace."""
     await db.announcements.update_many({}, {"$unset": {"price": ""}})
+
+    announcements_cursor = db.announcements.find({}, {"id": 1, "contact_info": 1})
+    async for item in announcements_cursor:
+        try:
+            normalized_phone = normalize_ukrainian_phone(item.get("contact_info", ""))
+        except HTTPException:
+            continue
+        if normalized_phone != item.get("contact_info"):
+            await db.announcements.update_one(
+                {"id": item["id"]},
+                {"$set": {"contact_info": normalized_phone}},
+            )
 
     # Replace the original demo sale listing with a community notice for existing databases.
     await db.announcements.update_one(
