@@ -5,6 +5,11 @@ import { Badge } from '../ui/badge';
 import { announcementCategories } from '../../data/mockData';
 
 export function AnnouncementCard({ announcement, index = 0 }) {
+  const phoneNumber = (announcement.contact_info || '').trim();
+  const phoneHref = phoneNumber
+    ? `${phoneNumber.startsWith('+') ? '+' : ''}${phoneNumber.replace(/\D/g, '')}`
+    : '';
+
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('uk-UA', {
@@ -52,18 +57,26 @@ export function AnnouncementCard({ announcement, index = 0 }) {
             {announcement.description}
           </p>
           
-          <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t">
+          <div className="flex items-end justify-between gap-3 text-xs text-gray-500 pt-2 border-t">
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               до {formatDate(announcement.expires_at)}
             </span>
-            <a 
-              href={`tel:${announcement.contact_info}`}
-              className="flex items-center gap-1 text-[#e67e22] hover:underline"
-            >
-              <Phone className="w-3 h-3" />
-              Зателефонувати
-            </a>
+            {phoneHref ? (
+              <div className="flex flex-col items-end gap-1">
+                <a
+                  href={`tel:${phoneHref}`}
+                  aria-label={`Зателефонувати за номером ${phoneNumber}`}
+                  className="flex items-center gap-1 rounded-md text-right text-[#e67e22] hover:underline"
+                >
+                  <Phone className="w-3 h-3" />
+                  Зателефонувати
+                </a>
+                <span className="text-[11px] text-gray-500">{phoneNumber}</span>
+              </div>
+            ) : (
+              <span className="text-[11px] text-gray-400">Телефон не вказано</span>
+            )}
           </div>
         </CardContent>
       </Card>
