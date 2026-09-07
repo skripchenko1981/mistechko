@@ -1,12 +1,12 @@
 import { motion } from 'framer-motion';
-import { Clock, Phone, AlertTriangle, Pencil } from 'lucide-react';
+import { Clock, Phone, AlertTriangle, Pencil, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { announcementCategories } from '../../data/mockData';
 import { useAuthStore } from '../../stores';
 
-export function AnnouncementCard({ announcement, index = 0 }) {
+export function AnnouncementCard({ announcement, index = 0, onDelete }) {
   const { user } = useAuthStore();
   const rawPhoneDigits = (announcement.contact_info || '').replace(/\D/g, '');
   const phoneDigitsWithCountry = rawPhoneDigits.startsWith('38')
@@ -58,13 +58,23 @@ export function AnnouncementCard({ announcement, index = 0 }) {
             )}
           </div>
           {canEdit && (
-            <Link
-              to={`/announcements/${announcement.id}/edit`}
-              className="mb-2 inline-flex items-center gap-1 text-xs text-[#1e3a5f] hover:text-[#e67e22] hover:underline"
-            >
-              <Pencil className="h-3 w-3" />
-              Редагувати
-            </Link>
+            <div className="mb-2 flex items-center gap-3 text-xs">
+              <Link
+                to={`/announcements/${announcement.id}/edit`}
+                className="inline-flex items-center gap-1 text-[#1e3a5f] hover:text-[#e67e22] hover:underline"
+              >
+                <Pencil className="h-3 w-3" />
+                Редагувати
+              </Link>
+              <button
+                type="button"
+                onClick={() => onDelete?.(announcement.id)}
+                className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 hover:underline"
+              >
+                <Trash2 className="h-3 w-3" />
+                Видалити
+              </button>
+            </div>
           )}
           
           <h4 className="font-semibold text-[#1e3a5f] mb-2 line-clamp-2">

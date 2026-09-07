@@ -16,10 +16,11 @@ const radaFilters = [
 
 export function AnnouncementsPage() {
   const { announcements, isLoading, error, fetchAnnouncements } = useAnnouncementsStore();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, token } = useAuthStore();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedRada, setSelectedRada] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [actionError, setActionError] = useState('');
 
   useEffect(() => {
     const rada = selectedRada === 'all' ? null : selectedRada;
@@ -35,6 +36,28 @@ export function AnnouncementsPage() {
     }
     return true;
   });
+
+  const handleDelete = async (announcementId) => {
+    if (!window.confirm('Видалити це оголошення? Дію неможливо скасувати.')) return;
+
+    setActionError('');
+    try {
+      const response = await fetch(`${process.env.REACT_APP_BACKEND_URL || ''}/api/announcements/${announcementId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'Не вдалося видалити оголошення.');
+      }
+      const rada = selectedRada === 'all' ? null : selectedRada;
+      const category = selectedCategory === 'all' ? null : selectedCategory;
+      fetchAnnouncements(rada, category);
+    } catch (requestError) {
+      setActionError(requestError.message);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12" data-testid="announcements-page">
@@ -119,6 +142,7 @@ export function AnnouncementsPage() {
         </div>
 
         {/* Announcements Grid */}
+        {actionError && <p className="mb-4 text-sm text-red-600" role="alert">{actionError}</p>}
         {isLoading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -128,7 +152,7 @@ export function AnnouncementsPage() {
         ) : filteredAnnouncements.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             {filteredAnnouncements.map((item, index) => (
-              <AnnouncementCard key={item.id} announcement={item} index={index} />
+              <AnnouncementCard key={item.id} announcement={item} index={index} onDelete={handleDelete} />
             ))}
           </div>
         ) : (
